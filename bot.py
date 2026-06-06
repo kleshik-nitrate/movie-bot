@@ -82,16 +82,17 @@ def format_awards(awards: list) -> str:
         wins = data["wins"]
         noms = data["nominations"]
 
+        line = f"🏆 <b>{award_name}</b>"
         if wins:
             wins_str = ", ".join(wins[:2])
             if len(wins) > 2:
                 wins_str += f" +{len(wins) - 2}"
-            line = f"🏆 <b>{award_name}</b>: победа — {wins_str}"
-        else:
+            line += f"\n   ✅ Победа: {wins_str}"
+        if noms:
             noms_str = ", ".join(noms[:2])
             if len(noms) > 2:
                 noms_str += f" +{len(noms) - 2}"
-            line = f"🎖 <b>{award_name}</b>: номинация — {noms_str}"
+            line += f"\n   📋 Номинации: {noms_str}"
 
         lines.append(line)
         shown += 1
