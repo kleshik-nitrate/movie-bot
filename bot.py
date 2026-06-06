@@ -9,12 +9,16 @@ from aiogram.filters import CommandStart
 
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "8817836406:AAH8Lo5YahTpaS8-PWodecoSbMabGYzuXco")
 KINOPOISK_API_KEY = os.environ.get("KINOPOISK_API_KEY", "MPB6XPE-HWH48B6-KVMA1PT-EMP1DWN")
-ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "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")
+ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 KINOPOISK_API_URL = "https://api.kinopoisk.dev/v1.4/movie/search"
+KINOPOISK_DETAIL_URL = "https://api.kinopoisk.dev/v1.4/movie/{}"
 
 bot = Bot(token=TELEGRAM_TOKEN)
 dp = Dispatcher()
 anthropic_client = AsyncAnthropic(api_key=ANTHROPIC_API_KEY)
+
+# Известные престижные премии
+MAJOR_AWARDS = {"Оскар", "Золотой глобус", "BAFTA", "Эмми", "Канны", "Берлинале", "Венеция"}
 
 
 async def search_movie(query: str) -> dict | None:
@@ -30,6 +34,72 @@ async def search_movie(query: str) -> dict | None:
             data = await resp.json(content_type=None)
             docs = data.get("docs", [])
             return docs[0] if docs else None
+
+
+async def get_movie_awards(movie_id: int) -> list:
+    headers = {"X-API-KEY": KINOPOISK_API_KEY}
+    connector = aiohttp.TCPConnector(ssl=False)
+    url = KINOPOISK_DETAIL_URL.format(movie_id)
+
+    async with aiohttp.ClientSession(connector=connector, headers=headers) as session:
+        async with session.get(url, allow_redirects=True) as resp:
+            if resp.status != 200:
+                return []
+            data = await resp.json(content_type=None)
+            return data.get("awards", [])
+
+
+def format_awards(awards: list) -> str:
+    if not awards:
+        return ""
+
+    # Группируем по названию премии
+    grouped: dict[str, dict] = {}
+    for award in awards:
+        nomination = award.get("nomination", {})
+        award_info = nomination.get("award", {})
+        title = award_info.get("title", "")
+        year = award_info.get("year", "")
+        won = award.get("winning", False)
+        nom_title = nomination.get("title", "")
+
+        key = f"{title} ({year})" if year else title
+        if key not in grouped:
+            grouped[key] = {"wins": [], "nominations": []}
+
+        if won:
+            grouped[key]["wins"].append(nom_title)
+        else:
+            grouped[key]["nominations"].append(nom_title)
+
+    # Сортируем: сначала с победами, потом только номинации
+    # Показываем только крупные премии или первые 3
+    lines = []
+    shown = 0
+    for award_name, data in grouped.items():
+        if shown >= 4:
+            break
+        wins = data["wins"]
+        noms = data["nominations"]
+
+        if wins:
+            wins_str = ", ".join(wins[:2])
+            if len(wins) > 2:
+                wins_str += f" +{len(wins) - 2}"
+            line = f"🏆 <b>{award_name}</b>: победа — {wins_str}"
+        else:
+            noms_str = ", ".join(noms[:2])
+            if len(noms) > 2:
+                noms_str += f" +{len(noms) - 2}"
+            line = f"🎖 <b>{award_name}</b>: номинация — {noms_str}"
+
+        lines.append(line)
+        shown += 1
+
+    if not lines:
+        return ""
+
+    return "\n🏅 <b>Награды:</b>\n" + "\n".join(lines)
 
 
 async def extract_movie_from_image(photo_bytes: bytes) -> str | None:
@@ -69,7 +139,7 @@ def format_rating(value) -> str:
     return f"{value:.1f}"
 
 
-def format_movie(movie: dict) -> str:
+async def build_movie_text(movie: dict) -> str:
     name_ru = movie.get("name") or "—"
     name_orig = movie.get("alternativeName") or movie.get("enName") or "—"
     year = movie.get("year") or "—"
@@ -85,6 +155,12 @@ def format_movie(movie: dict) -> str:
     if len(description) > 500:
         description = description[:500].rstrip() + "..."
 
+    # Получаем награды
+    awards_text = ""
+    if movie_id:
+        awards = await get_movie_awards(movie_id)
+        awards_text = format_awards(awards)
+
     return (
         f"🎬 <b>{name_ru}</b>\n"
         f"🌍 <i>{name_orig}</i>\n\n"
@@ -93,6 +169,7 @@ def format_movie(movie: dict) -> str:
         f"🎥 IMDb: {imdb_rating}\n"
         f"🔗 <a href='{kp_link}'>Открыть на Кинопоиске</a>\n\n"
         f"📝 {description}"
+        f"{awards_text}"
     )
 
 
@@ -130,7 +207,7 @@ async def handle_photo(message: Message):
         await message.answer("❌ Фильм не найден в базе.")
         return
 
-    text = format_movie(movie)
+    text = await build_movie_text(movie)
     await message.answer(text, parse_mode="HTML", disable_web_page_preview=False)
 
 
@@ -145,7 +222,7 @@ async def handle_movie_search(message: Message):
         await message.answer("❌ Фильм не найден. Попробуйте уточнить название.")
         return
 
-    text = format_movie(movie)
+    text = await build_movie_text(movie)
     await message.answer(text, parse_mode="HTML", disable_web_page_preview=False)
 
 
