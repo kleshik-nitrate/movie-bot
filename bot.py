@@ -1,15 +1,20 @@
 import asyncio
+import base64
+import os
 import aiohttp
+from anthropic import AsyncAnthropic
 from aiogram import Bot, Dispatcher, F
 from aiogram.types import Message
 from aiogram.filters import CommandStart
 
-TELEGRAM_TOKEN = "8817836406:AAH8Lo5YahTpaS8-PWodecoSbMabGYzuXco"
-KINOPOISK_API_KEY = "MPB6XPE-HWH48B6-KVMA1PT-EMP1DWN"
+TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "8817836406:AAH8Lo5YahTpaS8-PWodecoSbMabGYzuXco")
+KINOPOISK_API_KEY = os.environ.get("KINOPOISK_API_KEY", "MPB6XPE-HWH48B6-KVMA1PT-EMP1DWN")
+ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "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")
 KINOPOISK_API_URL = "https://api.kinopoisk.dev/v1.4/movie/search"
 
 bot = Bot(token=TELEGRAM_TOKEN)
 dp = Dispatcher()
+anthropic_client = AsyncAnthropic(api_key=ANTHROPIC_API_KEY)
 
 
 async def search_movie(query: str) -> dict | None:
@@ -25,6 +30,37 @@ async def search_movie(query: str) -> dict | None:
             data = await resp.json(content_type=None)
             docs = data.get("docs", [])
             return docs[0] if docs else None
+
+
+async def extract_movie_from_image(photo_bytes: bytes) -> str | None:
+    image_data = base64.standard_b64encode(photo_bytes).decode("utf-8")
+
+    message = await anthropic_client.messages.create(
+        model="claude-haiku-4-5-20251001",
+        max_tokens=100,
+        messages=[
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "image",
+                        "source": {
+                            "type": "base64",
+                            "media_type": "image/jpeg",
+                            "data": image_data,
+                        },
+                    },
+                    {
+                        "type": "text",
+                        "text": "На этом изображении есть название фильма или постер фильма. Извлеки только название фильма. Ответь только названием фильма, ничего лишнего. Если названия фильма нет — ответь NONE.",
+                    },
+                ],
+            }
+        ],
+    )
+
+    result = message.content[0].text.strip()
+    return None if result == "NONE" else result
 
 
 def format_rating(value) -> str:
@@ -64,8 +100,38 @@ def format_movie(movie: dict) -> str:
 async def cmd_start(message: Message):
     await message.answer(
         "👋 Привет! Я помогу найти информацию о фильме.\n\n"
-        "Просто напиши название фильма — на русском или на английском."
+        "Напиши название фильма или пришли картинку/постер — я всё найду."
     )
+
+
+@dp.message(F.photo)
+async def handle_photo(message: Message):
+    await message.answer("🖼 Анализирую изображение...")
+
+    photo = message.photo[-1]
+    file = await bot.get_file(photo.file_id)
+
+    async with aiohttp.ClientSession() as session:
+        url = f"https://api.telegram.org/file/bot{TELEGRAM_TOKEN}/{file.file_path}"
+        async with session.get(url) as resp:
+            photo_bytes = await resp.read()
+
+    movie_name = await extract_movie_from_image(photo_bytes)
+
+    if not movie_name:
+        await message.answer("❌ Не удалось определить название фильма на изображении.")
+        return
+
+    await message.answer(f"🔍 Нашёл на картинке: <b>{movie_name}</b>\nИщу информацию...", parse_mode="HTML")
+
+    movie = await search_movie(movie_name)
+
+    if not movie:
+        await message.answer("❌ Фильм не найден в базе.")
+        return
+
+    text = format_movie(movie)
+    await message.answer(text, parse_mode="HTML", disable_web_page_preview=False)
 
 
 @dp.message(F.text)
