@@ -7,9 +7,9 @@ from aiogram import Bot, Dispatcher, F
 from aiogram.types import Message
 from aiogram.filters import CommandStart
 
-TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "8817836406:AAH8Lo5YahTpaS8-PWodecoSbMabGYzuXco")
-KINOPOISK_API_KEY = os.environ.get("KINOPOISK_API_KEY", "MPB6XPE-HWH48B6-KVMA1PT-EMP1DWN")
-ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
+TELEGRAM_TOKEN = os.environ["TELEGRAM_TOKEN"]
+KINOPOISK_API_KEY = os.environ["KINOPOISK_API_KEY"]
+ANTHROPIC_API_KEY = os.environ["ANTHROPIC_API_KEY"]
 KINOPOISK_API_URL = "https://api.kinopoisk.dev/v1.4/movie/search"
 KINOPOISK_DETAIL_URL = "https://api.kinopoisk.dev/v1.4/movie/{}"
 
