@@ -4,7 +4,7 @@ import os
 import aiohttp
 from anthropic import AsyncAnthropic
 from aiogram import Bot, Dispatcher, F
-from aiogram.types import Message
+from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 from aiogram.filters import CommandStart
 
 TELEGRAM_TOKEN = os.environ["TELEGRAM_TOKEN"]
@@ -21,14 +21,13 @@ anthropic_client = AsyncAnthropic(api_key=ANTHROPIC_API_KEY)
 MAJOR_AWARDS = {"Оскар", "Золотой глобус", "BAFTA", "Эмми", "Канны", "Берлинале", "Венеция"}
 
 
-async def search_movie(query: str) -> dict | None | bool:
+async def search_movies(query: str, limit: int = 5) -> list | bool:
     """
     Возвращает:
-      dict  — фильм найден
-      None  — фильм не найден
+      list  — список фильмов (может быть пустым)
       False — сервис недоступен
     """
-    params = {"query": query, "limit": 1}
+    params = {"query": query, "limit": limit}
     headers = {"X-API-KEY": KINOPOISK_API_KEY}
     connector = aiohttp.TCPConnector(ssl=False)
 
@@ -44,24 +43,53 @@ async def search_movie(query: str) -> dict | None | bool:
                     print(f"API error: {resp.status}")
                     return False
                 data = await resp.json(content_type=None)
-                docs = data.get("docs", [])
-                return docs[0] if docs else None
+                return data.get("docs", [])
     except (aiohttp.ClientError, asyncio.TimeoutError) as e:
         print(f"Connection error: {e}")
         return False
 
 
-async def get_movie_awards(movie_id: int) -> list:
+async def get_movie_by_id(movie_id: int) -> dict | bool:
     headers = {"X-API-KEY": KINOPOISK_API_KEY}
     connector = aiohttp.TCPConnector(ssl=False)
     url = KINOPOISK_DETAIL_URL.format(movie_id)
 
-    async with aiohttp.ClientSession(connector=connector, headers=headers) as session:
-        async with session.get(url, allow_redirects=True) as resp:
-            if resp.status != 200:
-                return []
-            data = await resp.json(content_type=None)
-            return data.get("awards", [])
+    try:
+        async with aiohttp.ClientSession(connector=connector, headers=headers) as session:
+            async with session.get(url, allow_redirects=True, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                if resp.status != 200:
+                    return False
+                return await resp.json(content_type=None)
+    except (aiohttp.ClientError, asyncio.TimeoutError):
+        return False
+
+
+def has_duplicates(movies: list) -> bool:
+    """Проверяет есть ли фильмы с одинаковым названием."""
+    if len(movies) <= 1:
+        return False
+    first_name = (movies[0].get("name") or "").lower().strip()
+    return any((m.get("name") or "").lower().strip() == first_name for m in movies[1:])
+
+
+def make_selection_keyboard(movies: list) -> InlineKeyboardMarkup:
+    buttons = []
+    for movie in movies:
+        name = movie.get("name") or movie.get("alternativeName") or "Без названия"
+        year = movie.get("year") or "?"
+        movie_id = movie.get("id")
+        buttons.append([InlineKeyboardButton(
+            text=f"{name} ({year})",
+            callback_data=f"movie_{movie_id}"
+        )])
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
+async def get_movie_awards(movie_id: int) -> list:
+    data = await get_movie_by_id(movie_id)
+    if not data or data is False:
+        return []
+    return data.get("awards", [])
 
 
 def get_hashtags(movie: dict) -> str:
@@ -262,16 +290,21 @@ async def handle_photo(message: Message):
 
     await message.answer(f"🔍 Нашёл на картинке: <b>{movie_name}</b>\nИщу информацию...", parse_mode="HTML")
 
-    movie = await search_movie(movie_name)
+    movies = await search_movies(movie_name)
 
-    if movie is False:
+    if movies is False:
         await message.answer("⚠️ Кинопоиск сейчас недоступен. Попробуйте чуть позже.")
         return
-    if movie is None:
+    if not movies:
         await message.answer("❌ Фильм не найден в базе.")
         return
 
-    text = await build_movie_text(movie)
+    if has_duplicates(movies):
+        kb = make_selection_keyboard(movies)
+        await message.answer("🎬 Найдено несколько фильмов. Выберите нужный:", reply_markup=kb)
+        return
+
+    text = await build_movie_text(movies[0])
     await message.answer(text, parse_mode="HTML", disable_web_page_preview=False)
 
 
@@ -280,17 +313,38 @@ async def handle_movie_search(message: Message):
     query = message.text.strip()
     await message.answer("🔍 Ищу...")
 
-    movie = await search_movie(query)
+    movies = await search_movies(query)
 
-    if movie is False:
+    if movies is False:
         await message.answer("⚠️ Кинопоиск сейчас недоступен. Попробуйте чуть позже.")
         return
-    if movie is None:
+    if not movies:
         await message.answer("❌ Фильм не найден. Попробуйте уточнить название.")
         return
 
-    text = await build_movie_text(movie)
+    if has_duplicates(movies):
+        kb = make_selection_keyboard(movies)
+        await message.answer("🎬 Найдено несколько фильмов. Выберите нужный:", reply_markup=kb)
+        return
+
+    text = await build_movie_text(movies[0])
     await message.answer(text, parse_mode="HTML", disable_web_page_preview=False)
+
+
+@dp.callback_query(F.data.startswith("movie_"))
+async def handle_movie_selection(callback: CallbackQuery):
+    movie_id = int(callback.data.split("_")[1])
+    await callback.message.edit_text("🔍 Загружаю информацию...")
+
+    movie = await get_movie_by_id(movie_id)
+
+    if movie is False:
+        await callback.message.edit_text("⚠️ Кинопоиск сейчас недоступен. Попробуйте чуть позже.")
+        return
+
+    text = await build_movie_text(movie)
+    await callback.message.edit_text(text, parse_mode="HTML", disable_web_page_preview=False)
+    await callback.answer()
 
 
 async def main():
