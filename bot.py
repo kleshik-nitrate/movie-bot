@@ -64,15 +64,21 @@ async def get_movie_by_id(movie_id: int) -> dict | bool:
         return False
 
 
-def has_duplicates(movies: list) -> bool:
-    """Проверяет есть ли фильмы с одинаковым названием."""
+def make_result_keyboard(movies: list) -> InlineKeyboardMarkup | None:
+    """Кнопка 'Другие варианты' если есть ещё результаты."""
     if len(movies) <= 1:
-        return False
-    first_name = (movies[0].get("name") or "").lower().strip()
-    return any((m.get("name") or "").lower().strip() == first_name for m in movies[1:])
+        return None
+    other_ids = ",".join(str(m.get("id")) for m in movies[1:])
+    return InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(
+            text=f"📋 Другие варианты ({len(movies) - 1})",
+            callback_data=f"others_{other_ids}"
+        )
+    ]])
 
 
 def make_selection_keyboard(movies: list) -> InlineKeyboardMarkup:
+    """Список фильмов для выбора."""
     buttons = []
     for movie in movies:
         name = movie.get("name") or movie.get("alternativeName") or "Без названия"
@@ -299,13 +305,9 @@ async def handle_photo(message: Message):
         await message.answer("❌ Фильм не найден в базе.")
         return
 
-    if has_duplicates(movies):
-        kb = make_selection_keyboard(movies)
-        await message.answer("🎬 Найдено несколько фильмов. Выберите нужный:", reply_markup=kb)
-        return
-
     text = await build_movie_text(movies[0])
-    await message.answer(text, parse_mode="HTML", disable_web_page_preview=False)
+    kb = make_result_keyboard(movies)
+    await message.answer(text, parse_mode="HTML", disable_web_page_preview=False, reply_markup=kb)
 
 
 @dp.message(F.text)
@@ -322,13 +324,9 @@ async def handle_movie_search(message: Message):
         await message.answer("❌ Фильм не найден. Попробуйте уточнить название.")
         return
 
-    if has_duplicates(movies):
-        kb = make_selection_keyboard(movies)
-        await message.answer("🎬 Найдено несколько фильмов. Выберите нужный:", reply_markup=kb)
-        return
-
     text = await build_movie_text(movies[0])
-    await message.answer(text, parse_mode="HTML", disable_web_page_preview=False)
+    kb = make_result_keyboard(movies)
+    await message.answer(text, parse_mode="HTML", disable_web_page_preview=False, reply_markup=kb)
 
 
 @dp.callback_query(F.data.startswith("movie_"))
@@ -344,6 +342,24 @@ async def handle_movie_selection(callback: CallbackQuery):
 
     text = await build_movie_text(movie)
     await callback.message.edit_text(text, parse_mode="HTML", disable_web_page_preview=False)
+    await callback.answer()
+
+
+@dp.callback_query(F.data.startswith("others_"))
+async def handle_others(callback: CallbackQuery):
+    ids = [int(i) for i in callback.data.split("_")[1].split(",")]
+    movies = []
+    for movie_id in ids:
+        m = await get_movie_by_id(movie_id)
+        if m and m is not False:
+            movies.append(m)
+
+    if not movies:
+        await callback.answer("⚠️ Не удалось загрузить варианты", show_alert=True)
+        return
+
+    kb = make_selection_keyboard(movies)
+    await callback.message.answer("🎬 Выберите нужный вариант:", reply_markup=kb)
     await callback.answer()
 
 
