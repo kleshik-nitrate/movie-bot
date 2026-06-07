@@ -64,6 +64,46 @@ async def get_movie_awards(movie_id: int) -> list:
             return data.get("awards", [])
 
 
+def get_hashtags(movie: dict) -> str:
+    genres = {g.get("name", "").lower() for g in movie.get("genres", [])}
+    age_rating = movie.get("ageRating") or 0
+    mpaa = (movie.get("ratingMpaa") or "").lower()
+    name = (movie.get("name") or "").lower()
+    alt_name = (movie.get("alternativeName") or "").lower()
+    description = ((movie.get("shortDescription") or "") + " " + (movie.get("description") or "")).lower()
+
+    hashtags = []
+
+    # #новыйгод — новогодние и рождественские фильмы
+    ny_keywords = [
+        "рождество", "новый год", "новогодн", "christmas", "xmas",
+        "santa", "санта", "holiday", "эльф", "elf", "гринч", "grinch",
+        "декабрь", "снегурочка", "дед мороз",
+    ]
+    if any(kw in name or kw in alt_name or kw in description for kw in ny_keywords):
+        hashtags.append("#новыйгод")
+
+    # #комедия
+    if "комедия" in genres:
+        hashtags.append("#комедия")
+
+    # #криминал — боевики, триллеры, детективы
+    if genres & {"криминал", "боевик", "триллер", "детектив", "военный"}:
+        hashtags.append("#криминал")
+
+    # #семейный — мультфильмы, детские, семейные
+    family_genres = {"мультфильм", "семейный", "анимация", "для детей"}
+    if (genres & family_genres) or (age_rating <= 12 and age_rating > 0):
+        hashtags.append("#семейный")
+
+    # #бездетей — взрослые фильмы
+    adult_genres = {"эротика", "аниме"}
+    if age_rating >= 18 or mpaa in ("r", "nc-17") or (genres & adult_genres):
+        hashtags.append("#бездетей")
+
+    return " ".join(hashtags)
+
+
 def format_awards(awards: list) -> str:
     if not awards:
         return ""
@@ -177,6 +217,10 @@ async def build_movie_text(movie: dict) -> str:
         awards = await get_movie_awards(movie_id)
         awards_text = format_awards(awards)
 
+    # Хэштеги
+    hashtags = get_hashtags(movie)
+    hashtags_text = f"\n\n{hashtags}" if hashtags else ""
+
     return (
         f"🎬 <b>{name_ru}</b>\n"
         f"🌍 <i>{name_orig}</i>\n\n"
@@ -186,6 +230,7 @@ async def build_movie_text(movie: dict) -> str:
         f"🔗 <a href='{kp_link}'>Открыть на Кинопоиске</a>\n\n"
         f"📝 {description}"
         f"{awards_text}"
+        f"{hashtags_text}"
     )
 
 
