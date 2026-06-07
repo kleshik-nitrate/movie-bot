@@ -21,19 +21,34 @@ anthropic_client = AsyncAnthropic(api_key=ANTHROPIC_API_KEY)
 MAJOR_AWARDS = {"Оскар", "Золотой глобус", "BAFTA", "Эмми", "Канны", "Берлинале", "Венеция"}
 
 
-async def search_movie(query: str) -> dict | None:
+async def search_movie(query: str) -> dict | None | bool:
+    """
+    Возвращает:
+      dict  — фильм найден
+      None  — фильм не найден
+      False — сервис недоступен
+    """
     params = {"query": query, "limit": 1}
     headers = {"X-API-KEY": KINOPOISK_API_KEY}
     connector = aiohttp.TCPConnector(ssl=False)
 
-    async with aiohttp.ClientSession(connector=connector, headers=headers) as session:
-        async with session.get(KINOPOISK_API_URL, params=params, allow_redirects=True) as resp:
-            if resp.status != 200:
-                print(f"API error: {resp.status}")
-                return None
-            data = await resp.json(content_type=None)
-            docs = data.get("docs", [])
-            return docs[0] if docs else None
+    try:
+        async with aiohttp.ClientSession(connector=connector, headers=headers) as session:
+            async with session.get(
+                KINOPOISK_API_URL, params=params, allow_redirects=True, timeout=aiohttp.ClientTimeout(total=10)
+            ) as resp:
+                if resp.status in (502, 503, 504):
+                    print(f"Kinopoisk unavailable: {resp.status}")
+                    return False
+                if resp.status != 200:
+                    print(f"API error: {resp.status}")
+                    return False
+                data = await resp.json(content_type=None)
+                docs = data.get("docs", [])
+                return docs[0] if docs else None
+    except (aiohttp.ClientError, asyncio.TimeoutError) as e:
+        print(f"Connection error: {e}")
+        return False
 
 
 async def get_movie_awards(movie_id: int) -> list:
@@ -204,7 +219,10 @@ async def handle_photo(message: Message):
 
     movie = await search_movie(movie_name)
 
-    if not movie:
+    if movie is False:
+        await message.answer("⚠️ Кинопоиск сейчас недоступен. Попробуйте чуть позже.")
+        return
+    if movie is None:
         await message.answer("❌ Фильм не найден в базе.")
         return
 
@@ -219,7 +237,10 @@ async def handle_movie_search(message: Message):
 
     movie = await search_movie(query)
 
-    if not movie:
+    if movie is False:
+        await message.answer("⚠️ Кинопоиск сейчас недоступен. Попробуйте чуть позже.")
+        return
+    if movie is None:
         await message.answer("❌ Фильм не найден. Попробуйте уточнить название.")
         return
 
