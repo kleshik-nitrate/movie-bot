@@ -64,17 +64,28 @@ async def get_movie_by_id(movie_id: int) -> dict | bool:
         return False
 
 
-def make_result_keyboard(movies: list) -> InlineKeyboardMarkup | None:
-    """Кнопка 'Другие варианты' если есть ещё результаты."""
-    if len(movies) <= 1:
-        return None
-    other_ids = ",".join(str(m.get("id")) for m in movies[1:])
-    return InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(
+def make_search_url(movie: dict) -> str:
+    """Генерирует ссылку на с названием и годом фильма."""
+    title = movie.get("alternativeName") or movie.get("name") or ""
+    year = movie.get("year") or ""
+    query = f"{title} {year}".strip()
+    encoded = query.replace(" ", "%20")
+    return f"https://rutracker.org/forum/tracker.php?nm={encoded}"
+
+
+def make_result_keyboard(movie: dict, movies: list) -> InlineKeyboardMarkup:
+    """Кнопки под результатом: ссылка на сайт + другие варианты."""
+    search_url = make_search_url(movie)
+    buttons = [[
+        InlineKeyboardButton(text="🔍 Найти на сайте", url=search_url)
+    ]]
+    if len(movies) > 1:
+        other_ids = ",".join(str(m.get("id")) for m in movies[1:])
+        buttons.append([InlineKeyboardButton(
             text=f"📋 Другие варианты ({len(movies) - 1})",
             callback_data=f"others_{other_ids}"
-        )
-    ]])
+        )])
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
 def make_selection_keyboard(movies: list) -> InlineKeyboardMarkup:
@@ -306,7 +317,7 @@ async def handle_photo(message: Message):
         return
 
     text = await build_movie_text(movies[0])
-    kb = make_result_keyboard(movies)
+    kb = make_result_keyboard(movies[0], movies)
     await message.answer(text, parse_mode="HTML", disable_web_page_preview=False, reply_markup=kb)
 
 
@@ -325,7 +336,7 @@ async def handle_movie_search(message: Message):
         return
 
     text = await build_movie_text(movies[0])
-    kb = make_result_keyboard(movies)
+    kb = make_result_keyboard(movies[0], movies)
     await message.answer(text, parse_mode="HTML", disable_web_page_preview=False, reply_markup=kb)
 
 
@@ -341,7 +352,8 @@ async def handle_movie_selection(callback: CallbackQuery):
         return
 
     text = await build_movie_text(movie)
-    await callback.message.edit_text(text, parse_mode="HTML", disable_web_page_preview=False)
+    kb = make_result_keyboard(movie, [movie])
+    await callback.message.edit_text(text, parse_mode="HTML", disable_web_page_preview=False, reply_markup=kb)
     await callback.answer()
 
 
