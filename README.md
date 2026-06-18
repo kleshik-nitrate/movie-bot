@@ -1,75 +1,113 @@
-# Болгарские слова — Telegram-бот
+# 🎬 MovieBOT
 
-Бот для заучивания болгарских слов с интервальным повторением.
+**RU** | [EN](#english)
 
-## Что умеет
+---
 
-- **➕ Добавить слово** — пишешь слово на **русском ИЛИ болгарском**. Бот через
-  Claude API определяет язык, и собирает **полную карточку**: существительное —
-  ед. и мн. число с ударением (`ма́са / ма́си`), глагол — несвършен и свършен
-  вид (`да́вам / дам`). Если ввёл болгарское слово (напр. `давам`) — бот покажет
-  русский перевод и предложит сохранить карточку. Если ключа Anthropic нет —
-  перевод берётся из бесплатного словаря Wiktionary. Любой перевод правится
-  кнопкой «✏️ Исправить».
-- **🔁 Повторять** — за сессию до 10 слов, **в двух направлениях** (рус↔болг,
-  вперемешку). Базовые слова — «👁 Показать перевод → ✅/❌». Твои добавленные
-  слова иногда нужно **напечатать** ответ: точное совпадение (без учёта
-  ударений/регистра) засчитывается сразу, иначе бот покажет правильный вариант
-  и спросит «Засчитать?». Для глаголов печатается только первая форма —
-  после ответа видны обе.
-- **➕ Фраза** — добавить пословицу/устойчивое выражение целиком (рус. или
-  болг.). Claude переводит и **ставит ударения** в болгарской фразе. В повторении
-  фраза показывается с **пропущенным словом** (`_____ ми би́ра`) — нужно вписать
-  недостающее слово.
-- **📝 Мои слова** — список словаря и фраз с постраничной навигацией и **🔍 поиском**
-  (по русской и болгарской стороне, без учёта ударений/регистра). По тапу на
-  слово открывается карточка: изменить русское, изменить перевод, **пересобрать
-  через Claude** (исправляет форму/ударение автоматически) или удалить.
-- **📥 Базовые слова** — встроенный набор ~250 частотных слов A1–A2
-  (`seed_words.py`). Новый пользователь получает его автоматически при первом
-  `/start`; кнопка догружает недостающие, не дублируя уже добавленные.
-- **📊 Статистика** — сколько слов всего, сколько к повторению, сколько выучено.
+## Русский
 
-Слова в сессии повторения идут от самых «просроченных» к свежим, а среди
-равных — в случайном порядке. **Базовые слова имеют фоновый приоритет:** при
-правильном ответе они прячутся в 3 раза дольше обычных и при равном сроке
-уступают твоим собственным словам (логика `is_seed` / `SEED_KNOWN_FACTOR`).
+Telegram-бот для поиска информации о фильмах. Найдёт фильм по названию, по постеру или по кадру из фильма.
 
-## Как работает повторение (интервальное)
+### Возможности
 
-- Вспомнил правильно → слово прячется на несколько следующих сессий
-  (`1 → 2 → 5 → 10 → 20 → 45` сессий по мере роста уровня).
-- Ошибся → слово вернётся уже в следующей сессии, уровень сбрасывается.
+- 🔤 Поиск по названию — на русском или английском, с опечатками
+- 🖼 Распознавание постеров и кадров из фильмов (через Claude Vision AI)
+- 📋 Выбор из нескольких результатов, если найдено несколько фильмов
+- ⭐ Рейтинг Кинопоиска и IMDb
+- 🏆 Награды и номинации (Оскар, Золотой глобус и др.)
+- 📝 Краткое описание фильма
+- 🔗 Ссылка на страницу фильма на Кинопоиске
+- 🏷 Автоматические хэштеги: #комедия #криминал #семейный #бездетей #новыйгод
+- 👥 Работает в групповых чатах
 
-Логика в `db.py` (`INTERVALS`, `grade_word`). У каждого пользователя свой
-словарь и свой прогресс.
+### Как запустить локально
 
-## Установка
+1. Установите зависимости:
+   ```bash
+   pip install aiogram aiohttp anthropic
+   ```
 
-```bash
-cd bulgarian-bot
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-```
+2. Создайте файл `.env` или задайте переменные окружения:
+   ```
+   TELEGRAM_TOKEN=ваш_токен
+   KINOPOISK_API_KEY=ваш_ключ
+   ANTHROPIC_API_KEY=ваш_ключ
+   ```
 
-## Получить токен
+3. Запустите бота:
+   ```bash
+   python3 bot.py
+   ```
 
-1. В Telegram напиши [@BotFather](https://t.me/BotFather), команда `/newbot`.
-2. Скопируй полученный токен.
+### Деплой на Railway
 
-## Запуск
+1. Форкните или загрузите репозиторий на GitHub
+2. Создайте проект на [railway.app](https://railway.app) и подключите репозиторий
+3. Добавьте переменные окружения в разделе Variables
+4. Railway автоматически запустит бота
 
-```bash
-BOT_TOKEN=твой_токен python bot.py
-```
+### Переменные окружения
 
-Данные хранятся в файле `vocab.db` (SQLite) рядом с ботом.
+| Переменная | Где получить |
+|-----------|-------------|
+| `TELEGRAM_TOKEN` | [@BotFather](https://t.me/BotFather) |
+| `KINOPOISK_API_KEY` | [kinopoisk.dev](https://kinopoisk.dev) |
+| `ANTHROPIC_API_KEY` | [console.anthropic.com](https://console.anthropic.com) |
 
-## Источник перевода
+---
 
-- Основной — **Claude API** (`claude_dict.py`, модель `claude-haiku-4-5`,
-  структурированный вывод): полная грамматическая карточка с ударениями и
-  формами. Нужен `ANTHROPIC_API_KEY` (см. `.env.example`), ~доли цента за слово.
-- Запасной (если ключа нет или сбой) — словарь Wiktionary, а затем автоперевод
-  Google (`dictionary.py`).
+## English
+
+<a name="english"></a>
+
+A Telegram bot for searching movie information. Finds movies by title, poster image, or scene screenshot.
+
+### Features
+
+- 🔤 Search by title — in Russian or English, typo-tolerant
+- 🖼 Movie poster and scene recognition (via Claude Vision AI)
+- 📋 Multiple results selection when several movies are found
+- ⭐ Kinopoisk and IMDb ratings
+- 🏆 Awards and nominations (Oscar, Golden Globe, etc.)
+- 📝 Short movie description
+- 🔗 Link to the movie page on Kinopoisk
+- 🏷 Auto hashtags: #comedy #crime #family #adultsonly #newyear
+- 👥 Works in group chats
+
+### Running Locally
+
+1. Install dependencies:
+   ```bash
+   pip install aiogram aiohttp anthropic
+   ```
+
+2. Set environment variables:
+   ```
+   TELEGRAM_TOKEN=your_token
+   KINOPOISK_API_KEY=your_key
+   ANTHROPIC_API_KEY=your_key
+   ```
+
+3. Run the bot:
+   ```bash
+   python3 bot.py
+   ```
+
+### Deploy to Railway
+
+1. Fork or upload the repository to GitHub
+2. Create a project on [railway.app](https://railway.app) and connect the repository
+3. Add environment variables in the Variables section
+4. Railway will automatically start the bot
+
+### Environment Variables
+
+| Variable | Where to get |
+|----------|-------------|
+| `TELEGRAM_TOKEN` | [@BotFather](https://t.me/BotFather) |
+| `KINOPOISK_API_KEY` | [kinopoisk.dev](https://kinopoisk.dev) |
+| `ANTHROPIC_API_KEY` | [console.anthropic.com](https://console.anthropic.com) |
+
+---
+
+Built with [aiogram](https://github.com/aiogram/aiogram), [Kinopoisk API](https://kinopoisk.dev) and [Claude AI](https://anthropic.com)
