@@ -65,12 +65,12 @@ async def get_movie_by_id(movie_id: int) -> dict | bool:
 
 
 def make_search_url(movie: dict) -> str:
-    """Генерирует ссылку на galkaruslan.com с названием и годом фильма."""
+    """Генерирует ссылку на Rutracker с названием и годом фильма."""
     title = movie.get("alternativeName") or movie.get("name") or ""
     year = movie.get("year") or ""
     query = f"{title} {year}".strip()
     encoded = query.replace(" ", "%20")
-    return f"https://galkaruslan.com/forum/tracker.php?nm={encoded}"
+    return f"https://rutracker.org/forum/tracker.php?nm={encoded}"
 
 
 def make_result_keyboard(movie: dict, movies: list) -> InlineKeyboardMarkup:
